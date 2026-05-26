@@ -28,7 +28,12 @@ export default function ExcelConverter() {
     const workbook = XLSX.read(buffer);
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    // ДОБАВЛЕН ПАРАМЕТР raw: false
+    // Он заставляет парсер брать видимый текст ячейки (формат даты), а не внутреннее число Excel
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      defval: "",
+      raw: false 
+    });
     
     if (jsonData.length > 0) {
       setData(jsonData);
@@ -131,7 +136,6 @@ export default function ExcelConverter() {
                       key={col} 
                       draggable
                       onDragStart={(e) => {
-                        // БЛОКИРОВКА ПЕРЕТАСКИВАНИЯ, ЕСЛИ ТЯНУТ ЗА ИНПУТ
                         if (e.target.tagName.toLowerCase() === 'input') {
                           e.preventDefault();
                           return;
