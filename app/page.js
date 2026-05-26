@@ -6,16 +6,11 @@ import * as XLSX from 'xlsx';
 export default function ExcelConverter() {
   const [data, setData] = useState([]);
   
-  // orderedCols хранит актуальный порядок всех колонок
   const [orderedCols, setOrderedCols] = useState([]);
-  
   const [keepCols, setKeepCols] = useState([]);
   const [renameMap, setRenameMap] = useState({});
-  
-  // Состояние для разделителя
   const [csvSeparator, setCsvSeparator] = useState(';');
 
-  // Рефы для Drag & Drop
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
 
@@ -25,15 +20,13 @@ export default function ExcelConverter() {
     if (!file) return;
 
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer);
+    
+    // ВАЖНО: cellDates: true заставляет парсер превращать числа-даты (типа 46157) 
+    // в полноценные JS-объекты Date (с учетом UTC)
+    const workbook = XLSX.read(buffer, { cellDates: true });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    // ДОБАВЛЕН ПАРАМЕТР raw: false
-    // Он заставляет парсер брать видимый текст ячейки (формат даты), а не внутреннее число Excel
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-      defval: "",
-      raw: false 
-    });
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
     
     if (jsonData.length > 0) {
       setData(jsonData);
@@ -48,7 +41,6 @@ export default function ExcelConverter() {
     }
   };
 
-  // Переключение чекбокса (включить/выключить колонку)
   const toggleKeepCol = (col) => {
     setKeepCols(prev => 
       prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
@@ -59,7 +51,6 @@ export default function ExcelConverter() {
     setRenameMap(prev => ({ ...prev, [oldName]: newName }));
   };
 
-  // Логика сортировки при перетаскивании
   const handleSort = () => {
     if (dragItem.current === null || dragOverItem.current === null) return;
     
@@ -87,7 +78,22 @@ export default function ExcelConverter() {
 
     data.forEach(row => {
       const lineValues = colsToExport.map(col => {
-        let val = (row[col] || "").toString();
+        let rawVal = row[col];
+        let val = "";
+
+        // ПРОВЕРКА НА ДАТУ
+        if (rawVal instanceof Date) {
+          // Получаем день, месяц и год по UTC (чтобы не было смещений из-за часовых поясов)
+          const day = String(rawVal.getUTCDate()).padStart(2, '0');
+          const month = String(rawVal.getUTCMonth() + 1).padStart(2, '0');
+          const year = rawVal.getUTCFullYear();
+          
+          // Форматируем дату (можешь поменять '.' на '-' если нужно)
+          val = `${day}.${month}.${year}`;
+        } else {
+          val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
+        }
+
         return val.replace(/\r?\n|\r/g, '').trim(); 
       });
       csvRows.push(lineValues.join(csvSeparator));
