@@ -1,13 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 
 export default function ExcelConverter() {
   const [data, setData] = useState([]);
-  const [headers, setHeaders] = useState([]);
+  
+  // orderedCols хранит актуальный порядок всех колонок
+  const [orderedCols, setOrderedCols] = useState([]);
+  
   const [keepCols, setKeepCols] = useState([]);
   const [renameMap, setRenameMap] = useState({});
+  
+  // Состояние для разделителя
+  const [csvSeparator, setCsvSeparator] = useState(';');
+
+  // Рефы для Drag & Drop
+  const dragItem = useRef(null);
+  const dragOverItem = useRef(null);
 
   // Чтение и парсинг Excel файла
   const handleFileUpload = async (e) => {
@@ -23,7 +33,8 @@ export default function ExcelConverter() {
     if (jsonData.length > 0) {
       setData(jsonData);
       const cols = Object.keys(jsonData[0]);
-      setHeaders(cols);
+      
+      setOrderedCols(cols);
       setKeepCols(cols);
       
       const initialRenameMap = {};
@@ -32,6 +43,7 @@ export default function ExcelConverter() {
     }
   };
 
+  // Переключение чекбокса (включить/выключить колонку)
   const toggleKeepCol = (col) => {
     setKeepCols(prev => 
       prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
@@ -42,6 +54,19 @@ export default function ExcelConverter() {
     setRenameMap(prev => ({ ...prev, [oldName]: newName }));
   };
 
+  // Логика сортировки при перетаскивании
+  const handleSort = () => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    
+    let _orderedCols = [...orderedCols];
+    const draggedItemContent = _orderedCols.splice(dragItem.current, 1)[0];
+    _orderedCols.splice(dragOverItem.current, 0, draggedItemContent);
+    
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setOrderedCols(_orderedCols);
+  };
+
   // Генерация и скачивание CSV
   const handleExport = () => {
     if (data.length === 0) return;
@@ -50,26 +75,21 @@ export default function ExcelConverter() {
       return;
     }
 
-    // 1. Формируем шапку (первую строку) с учетом переименований
-    const finalHeaders = keepCols.map(col => renameMap[col] || col);
-    const csvRows = [finalHeaders.join(';')];
+    const colsToExport = orderedCols.filter(col => keepCols.includes(col));
 
-    // 2. Формируем данные
+    const finalHeaders = colsToExport.map(col => renameMap[col] || col);
+    const csvRows = [finalHeaders.join(csvSeparator)];
+
     data.forEach(row => {
-      const lineValues = keepCols.map(col => {
+      const lineValues = colsToExport.map(col => {
         let val = (row[col] || "").toString();
-        // Жестко вычищаем переносы строк, чтобы не сломать структуру CSV
         return val.replace(/\r?\n|\r/g, '').trim(); 
       });
-
-      // Соединяем значения точкой с запятой
-      csvRows.push(lineValues.join(';'));
+      csvRows.push(lineValues.join(csvSeparator));
     });
 
-    // 3. Собираем финальный текст с BOM-маркером для правильной кириллицы
     const csvString = '\uFEFF' + csvRows.join('\n');
     
-    // 4. Скачиваем файл
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -94,35 +114,57 @@ export default function ExcelConverter() {
         />
       </div>
 
-      {headers.length > 0 && (
+      {orderedCols.length > 0 && (
         <div className="space-y-6">
           <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-700">Настройка экспорта</h2>
             <div className="border p-4 rounded-lg bg-gray-50 shadow-sm">
               <p className="text-sm text-gray-600 mb-4 font-medium">
-                Снимите галочки с колонок, которые не нужны. В текстовых полях можно задать новые имена для шапки CSV.
+                Снимите галочки с лишних колонок. Потяните строку мышкой за иконку слева, чтобы изменить порядок.
               </p>
               
               <div className="max-h-[500px] overflow-y-auto space-y-3 pr-2">
-                {headers.map(col => {
+                {orderedCols.map((col, index) => {
                   const isKept = keepCols.includes(col);
                   return (
-                    <div key={col} className="flex items-center space-x-4 p-3 bg-white border rounded-md shadow-sm transition-opacity" style={{ opacity: isKept ? 1 : 0.6 }}>
+                    <div 
+                      key={col} 
+                      draggable
+                      onDragStart={(e) => {
+                        // БЛОКИРОВКА ПЕРЕТАСКИВАНИЯ, ЕСЛИ ТЯНУТ ЗА ИНПУТ
+                        if (e.target.tagName.toLowerCase() === 'input') {
+                          e.preventDefault();
+                          return;
+                        }
+                        dragItem.current = index;
+                      }}
+                      onDragEnter={(e) => (dragOverItem.current = index)}
+                      onDragEnd={handleSort}
+                      onDragOver={(e) => e.preventDefault()}
+                      className={`flex items-center space-x-4 p-3 bg-white border rounded-md shadow-sm transition-all cursor-move hover:border-blue-300 ${isKept ? 'opacity-100' : 'opacity-60 bg-gray-50'}`}
+                    >
+                      <div className="text-gray-400 select-none" title="Потяните для сортировки">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16"></path>
+                        </svg>
+                      </div>
+
                       <input 
                         type="checkbox" 
                         checked={isKept}
                         onChange={() => toggleKeepCol(col)}
                         className="rounded text-green-600 focus:ring-green-500 h-5 w-5 cursor-pointer"
+                        title="Включить/выключить колонку"
                       />
                       <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <span className={`text-sm font-medium w-1/2 truncate ${isKept ? 'text-gray-700' : 'text-gray-400 line-through'}`} title={col}>
+                        <span className={`text-sm font-medium w-1/2 truncate cursor-text ${isKept ? 'text-gray-700' : 'text-gray-400 line-through'}`} title={col}>
                           {col}
                         </span>
                         <input 
                           type="text" 
                           value={renameMap[col] || ''}
                           onChange={(e) => handleRenameChange(col, e.target.value)}
-                          className="w-full sm:w-1/2 p-2 border border-gray-300 rounded text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-400"
+                          className="w-full sm:w-1/2 p-2 border border-gray-300 rounded text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-400 cursor-text"
                           disabled={!isKept}
                           placeholder="Новое имя"
                         />
@@ -134,12 +176,26 @@ export default function ExcelConverter() {
             </div>
           </div>
 
-          <button 
-            onClick={handleExport}
-            className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            Сохранить как CSV
-          </button>
+          <div className="pt-4 border-t border-gray-200 space-y-4">
+            <div className="flex items-center space-x-3">
+              <label className="text-sm font-medium text-gray-700">Разделитель CSV:</label>
+              <select 
+                value={csvSeparator} 
+                onChange={(e) => setCsvSeparator(e.target.value)}
+                className="p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+              >
+                <option value=";">Точка с запятой (;)</option>
+                <option value=",">Запятая (,)</option>
+              </select>
+            </div>
+            
+            <button 
+              onClick={handleExport}
+              className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+            >
+              Сохранить как CSV
+            </button>
+          </div>
         </div>
       )}
     </div>
