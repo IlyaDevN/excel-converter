@@ -10,23 +10,23 @@ export default function ExcelConverter() {
   const [keepCols, setKeepCols] = useState([]);
   const [renameMap, setRenameMap] = useState({});
   const [csvSeparator, setCsvSeparator] = useState(';');
+  const [dateFormat, setDateFormat] = useState('original');
 
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
 
-  // Чтение и парсинг Excel файла
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const buffer = await file.arrayBuffer();
-    
-    // ВАЖНО: cellDates: true заставляет парсер превращать числа-даты (типа 46157) 
-    // в полноценные JS-объекты Date (с учетом UTC)
     const workbook = XLSX.read(buffer, { cellDates: true });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      defval: "", 
+      raw: false 
+    });
     
     if (jsonData.length > 0) {
       setData(jsonData);
@@ -39,6 +39,8 @@ export default function ExcelConverter() {
       cols.forEach(col => initialRenameMap[col] = col);
       setRenameMap(initialRenameMap);
     }
+
+    e.target.value = null;
   };
 
   const toggleKeepCol = (col) => {
@@ -63,7 +65,6 @@ export default function ExcelConverter() {
     setOrderedCols(_orderedCols);
   };
 
-  // Генерация и скачивание CSV
   const handleExport = () => {
     if (data.length === 0) return;
     if (keepCols.length === 0) {
@@ -72,7 +73,6 @@ export default function ExcelConverter() {
     }
 
     const colsToExport = orderedCols.filter(col => keepCols.includes(col));
-
     const finalHeaders = colsToExport.map(col => renameMap[col] || col);
     const csvRows = [finalHeaders.join(csvSeparator)];
 
@@ -81,17 +81,62 @@ export default function ExcelConverter() {
         let rawVal = row[col];
         let val = "";
 
-        // ПРОВЕРКА НА ДАТУ
+        // СЛУЧАЙ 1: Если это системный объект Date
         if (rawVal instanceof Date) {
-          // Получаем день, месяц и год по UTC (чтобы не было смещений из-за часовых поясов)
           const day = String(rawVal.getUTCDate()).padStart(2, '0');
           const month = String(rawVal.getUTCMonth() + 1).padStart(2, '0');
           const year = rawVal.getUTCFullYear();
           
-          // Форматируем дату (можешь поменять '.' на '-' если нужно)
-          val = `${day}.${month}.${year}`;
-        } else {
+          if (dateFormat === 'original' || dateFormat === 'DD.MM.YYYY') val = `${day}.${month}.${year}`;
+          else if (dateFormat === 'DD-MM-YYYY') val = `${day}-${month}-${year}`;
+          else if (dateFormat === 'DD/MM/YYYY') val = `${day}/${month}/${year}`;
+          else if (dateFormat === 'YYYY.MM.DD') val = `${year}.${month}.${day}`;
+          else if (dateFormat === 'YYYY-MM-DD') val = `${year}-${month}-${day}`;
+          else if (dateFormat === 'YYYY/MM/DD') val = `${year}/${month}/${day}`;
+          else if (dateFormat === 'MM.DD.YYYY') val = `${month}.${day}.${year}`;
+          else if (dateFormat === 'MM-DD-YYYY') val = `${month}-${day}-${year}`;
+          else if (dateFormat === 'MM/DD/YYYY') val = `${month}/${day}/${year}`;
+        } 
+        // СЛУЧАЙ 2: Если это строка
+        else {
           val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
+          
+          if (dateFormat !== 'original' && val) {
+            const dmyMatch = val.match(/^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2,4})$/);
+            const ymdMatch = val.match(/^(\d{4})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})$/);
+            
+            let d, m, y;
+            let isDateString = false;
+            
+            if (dmyMatch) {
+              d = dmyMatch[1].padStart(2, '0');
+              m = dmyMatch[2].padStart(2, '0');
+              y = dmyMatch[3];
+              if (y.length === 2) y = parseInt(y) > 50 ? '19' + y : '20' + y;
+              isDateString = true;
+            } else if (ymdMatch) {
+              y = ymdMatch[1];
+              m = ymdMatch[2].padStart(2, '0');
+              d = ymdMatch[3].padStart(2, '0');
+              isDateString = true;
+            }
+            
+            if (isDateString) {
+              const checkDay = parseInt(d);
+              const checkMonth = parseInt(m);
+              if (checkDay >= 1 && checkDay <= 31 && checkMonth >= 1 && checkMonth <= 12) {
+                if (dateFormat === 'DD.MM.YYYY') val = `${d}.${m}.${y}`;
+                else if (dateFormat === 'DD-MM-YYYY') val = `${d}-${m}-${y}`;
+                else if (dateFormat === 'DD/MM/YYYY') val = `${d}/${m}/${y}`;
+                else if (dateFormat === 'YYYY.MM.DD') val = `${y}.${m}.${d}`;
+                else if (dateFormat === 'YYYY-MM-DD') val = `${y}-${m}-${d}`;
+                else if (dateFormat === 'YYYY/MM/DD') val = `${y}/${m}/${d}`;
+                else if (dateFormat === 'MM.DD.YYYY') val = `${m}.${d}.${y}`;
+                else if (dateFormat === 'MM-DD-YYYY') val = `${m}-${d}-${y}`;
+                else if (dateFormat === 'MM/DD/YYYY') val = `${m}/${d}/${y}`;
+              }
+            }
+          }
         }
 
         return val.replace(/\r?\n|\r/g, '').trim(); 
@@ -186,22 +231,43 @@ export default function ExcelConverter() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-200 space-y-4">
+          <div className="pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
             <div className="flex items-center space-x-3">
-              <label className="text-sm font-medium text-gray-700">Разделитель CSV:</label>
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Разделитель CSV:</label>
               <select 
                 value={csvSeparator} 
                 onChange={(e) => setCsvSeparator(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+                className="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
               >
                 <option value=";">Точка с запятой (;)</option>
                 <option value=",">Запятая (,)</option>
               </select>
             </div>
+
+            <div className="flex items-center space-x-3">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Формат даты:</label>
+              <select 
+                value={dateFormat} 
+                onChange={(e) => setDateFormat(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+              >
+                <option value="original">Как в исходном файле (без изменений)</option>
+                <option value="DD.MM.YYYY">ДД.ММ.ГГГГ (15.06.2026)</option>
+                <option value="DD-MM-YYYY">ДД-ММ-ГГГГ (15-06-2026)</option>
+                <option value="DD/MM/YYYY">ДД/ММ/ГГГГ (15/06/2026)</option>
+                <option value="YYYY.MM.DD">ГГГГ.ММ.ДД (2026.06.15)</option>
+                <option value="YYYY-MM-DD">ГГГГ-ММ-ДД (2026-06-15)</option>
+                <option value="YYYY/MM/DD">ГГГГ/ММ/ДД (2026/06/15)</option>
+                <option value="MM.DD.YYYY">ММ.ДД.ГГГГ (06.15.2026)</option>
+                <option value="MM-DD-YYYY">ММ-ДД-ГГГГ (06-15-2026)</option>
+                <option value="MM/DD/YYYY">ММ/ДД/ГГГГ (06/15/2026)</option>
+              </select>
+            </div>
             
             <button 
               onClick={handleExport}
-              className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+              className="sm:col-span-2 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer mt-2"
             >
               Сохранить как CSV
             </button>
