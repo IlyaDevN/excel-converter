@@ -81,7 +81,6 @@ export default function ExcelConverter() {
         let rawVal = row[col];
         let val = "";
 
-        // СЛУЧАЙ 1: Если это системный объект Date
         if (rawVal instanceof Date) {
           const day = String(rawVal.getUTCDate()).padStart(2, '0');
           const month = String(rawVal.getUTCMonth() + 1).padStart(2, '0');
@@ -97,7 +96,6 @@ export default function ExcelConverter() {
           else if (dateFormat === 'MM-DD-YYYY') val = `${month}-${day}-${year}`;
           else if (dateFormat === 'MM/DD/YYYY') val = `${month}/${day}/${year}`;
         } 
-        // СЛУЧАЙ 2: Если это строка
         else {
           val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
           
@@ -158,24 +156,25 @@ export default function ExcelConverter() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-8 font-sans">
-      <h1 className="text-2xl font-bold text-gray-800">Конвертер Excel ➡️ CSV</h1>
+    <div className="max-w-3xl mx-auto p-6 space-y-8 font-sans text-gray-900 dark:text-gray-100">
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Конвертер Excel ➡️ CSV</h1>
 
-      <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-white shadow-sm hover:bg-gray-50 transition-colors">
+      {/* Зона загрузки файлов с поддержкой темной темы */}
+      <div className="p-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <input 
           type="file" 
           accept=".xlsx, .xls" 
           onChange={handleFileUpload} 
-          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+          className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-blue-950/40 file:text-blue-700 dark:file:text-blue-400 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/40 cursor-pointer"
         />
       </div>
 
       {orderedCols.length > 0 && (
         <div className="space-y-6">
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-700">Настройка экспорта</h2>
-            <div className="border p-4 rounded-lg bg-gray-50 shadow-sm">
-              <p className="text-sm text-gray-600 mb-4 font-medium">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">Настройка экспорта</h2>
+            <div className="border border-gray-200 dark:border-gray-800 p-4 rounded-lg bg-gray-50 dark:bg-gray-900/30 shadow-sm">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 font-medium">
                 Снимите галочки с лишних колонок. Потяните строку мышкой за иконку слева, чтобы изменить порядок.
               </p>
               
@@ -196,9 +195,14 @@ export default function ExcelConverter() {
                       onDragEnter={(e) => (dragOverItem.current = index)}
                       onDragEnd={handleSort}
                       onDragOver={(e) => e.preventDefault()}
-                      className={`flex items-center space-x-4 p-3 bg-white border rounded-md shadow-sm transition-all cursor-move hover:border-blue-300 ${isKept ? 'opacity-100' : 'opacity-60 bg-gray-50'}`}
+                      className={`flex items-center space-x-4 p-3 border rounded-md shadow-sm transition-all cursor-move ${
+                        isKept 
+                          ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-100 hover:border-blue-300 dark:hover:border-blue-700' 
+                          : 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 opacity-55'
+                      }`}
                     >
-                      <div className="text-gray-400 select-none" title="Потяните для сортировки">
+                      {/* Иконка перетаскивания */}
+                      <div className="text-gray-400 dark:text-gray-500 select-none" title="Потяните для сортировки">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16"></path>
                         </svg>
@@ -208,18 +212,18 @@ export default function ExcelConverter() {
                         type="checkbox" 
                         checked={isKept}
                         onChange={() => toggleKeepCol(col)}
-                        className="rounded text-green-600 focus:ring-green-500 h-5 w-5 cursor-pointer"
+                        className="rounded text-green-600 focus:ring-green-500 h-5 w-5 cursor-pointer dark:bg-gray-700 dark:border-gray-600"
                         title="Включить/выключить колонку"
                       />
                       <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <span className={`text-sm font-medium w-1/2 truncate cursor-text ${isKept ? 'text-gray-700' : 'text-gray-400 line-through'}`} title={col}>
+                        <span className={`text-sm font-medium w-1/2 truncate cursor-text ${isKept ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 line-through'}`} title={col}>
                           {col}
                         </span>
                         <input 
                           type="text" 
                           value={renameMap[col] || ''}
                           onChange={(e) => handleRenameChange(col, e.target.value)}
-                          className="w-full sm:w-1/2 p-2 border border-gray-300 rounded text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-400 cursor-text"
+                          className="w-full sm:w-1/2 p-2 border border-gray-300 dark:border-gray-700 rounded text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 cursor-text"
                           disabled={!isKept}
                           placeholder="Новое имя"
                         />
@@ -231,14 +235,15 @@ export default function ExcelConverter() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Панель управления внизу страницы */}
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             <div className="flex items-center space-x-3">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Разделитель CSV:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">Разделитель CSV:</label>
               <select 
                 value={csvSeparator} 
                 onChange={(e) => setCsvSeparator(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+                className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
               >
                 <option value=";">Точка с запятой (;)</option>
                 <option value=",">Запятая (,)</option>
@@ -246,11 +251,11 @@ export default function ExcelConverter() {
             </div>
 
             <div className="flex items-center space-x-3">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Формат даты:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">Формат даты:</label>
               <select 
                 value={dateFormat} 
                 onChange={(e) => setDateFormat(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
+                className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
               >
                 <option value="original">Как в исходном файле (без изменений)</option>
                 <option value="DD.MM.YYYY">ДД.ММ.ГГГГ (15.06.2026)</option>
