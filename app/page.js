@@ -3,6 +3,19 @@
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 
+// Компонент спиннера загрузки (оверлей на весь экран)
+const FullScreenLoader = ({ message }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl flex flex-col items-center space-y-4">
+      <svg className="animate-spin h-10 w-10 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <p className="text-gray-700 dark:text-gray-200 font-medium">{message}</p>
+    </div>
+  </div>
+);
+
 // ==========================================
 // КОМПОНЕНТ 1: Excel -> CSV
 // ==========================================
@@ -13,6 +26,7 @@ function ExcelToCsv() {
   const [renameMap, setRenameMap] = useState({});
   const [csvSeparator, setCsvSeparator] = useState(';');
   const [dateFormat, setDateFormat] = useState('original');
+  const [isLoading, setIsLoading] = useState(false); // Состояние загрузки
 
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
@@ -21,26 +35,39 @@ function ExcelToCsv() {
     const file = e.target.files[0];
     if (!file) return;
 
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { cellDates: true });
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-      defval: "", 
-      raw: false 
-    });
-    
-    if (jsonData.length > 0) {
-      setData(jsonData);
-      const cols = Object.keys(jsonData[0]);
-      setOrderedCols(cols);
-      setKeepCols(cols);
-      
-      const initialRenameMap = {};
-      cols.forEach(col => initialRenameMap[col] = col);
-      setRenameMap(initialRenameMap);
-    }
-    e.target.value = null;
+    // Показываем спиннер
+    setIsLoading(true);
+
+    // Даем браузеру 100мс на отрисовку спиннера перед тем, как повесить поток тяжелой задачей
+    setTimeout(async () => {
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { cellDates: true });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+          defval: "", 
+          raw: false 
+        });
+        
+        if (jsonData.length > 0) {
+          setData(jsonData);
+          const cols = Object.keys(jsonData[0]);
+          setOrderedCols(cols);
+          setKeepCols(cols);
+          
+          const initialRenameMap = {};
+          cols.forEach(col => initialRenameMap[col] = col);
+          setRenameMap(initialRenameMap);
+        }
+      } catch (error) {
+        alert("Произошла ошибка при чтении файла. Возможно, он слишком велик.");
+        console.error(error);
+      } finally {
+        setIsLoading(false); // Убираем спиннер
+        e.target.value = null;
+      }
+    }, 100);
   };
 
   const toggleKeepCol = (col) => {
@@ -70,87 +97,100 @@ function ExcelToCsv() {
       return;
     }
 
-    const colsToExport = orderedCols.filter(col => keepCols.includes(col));
-    const finalHeaders = colsToExport.map(col => renameMap[col] || col);
-    const csvRows = [finalHeaders.join(csvSeparator)];
+    setIsLoading(true);
 
-    data.forEach(row => {
-      const lineValues = colsToExport.map(col => {
-        let rawVal = row[col];
-        let val = "";
+    setTimeout(() => {
+      try {
+        const colsToExport = orderedCols.filter(col => keepCols.includes(col));
+        const finalHeaders = colsToExport.map(col => renameMap[col] || col);
+        const csvRows = [finalHeaders.join(csvSeparator)];
 
-        if (rawVal instanceof Date) {
-          const day = String(rawVal.getUTCDate()).padStart(2, '0');
-          const month = String(rawVal.getUTCMonth() + 1).padStart(2, '0');
-          const year = rawVal.getUTCFullYear();
-          
-          if (dateFormat === 'original' || dateFormat === 'DD.MM.YYYY') val = `${day}.${month}.${year}`;
-          else if (dateFormat === 'DD-MM-YYYY') val = `${day}-${month}-${year}`;
-          else if (dateFormat === 'DD/MM/YYYY') val = `${day}/${month}/${year}`;
-          else if (dateFormat === 'YYYY.MM.DD') val = `${year}.${month}.${day}`;
-          else if (dateFormat === 'YYYY-MM-DD') val = `${year}-${month}-${day}`;
-          else if (dateFormat === 'YYYY/MM/DD') val = `${year}/${month}/${day}`;
-          else if (dateFormat === 'MM.DD.YYYY') val = `${month}.${day}.${year}`;
-          else if (dateFormat === 'MM-DD-YYYY') val = `${month}-${day}-${year}`;
-          else if (dateFormat === 'MM/DD/YYYY') val = `${month}/${day}/${year}`;
-        } 
-        else {
-          val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
-          if (dateFormat !== 'original' && val) {
-            const dmyMatch = val.match(/^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2,4})$/);
-            const ymdMatch = val.match(/^(\d{4})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})$/);
-            
-            let d, m, y, isDateString = false;
-            
-            if (dmyMatch) {
-              d = dmyMatch[1].padStart(2, '0');
-              m = dmyMatch[2].padStart(2, '0');
-              y = dmyMatch[3];
-              if (y.length === 2) y = parseInt(y) > 50 ? '19' + y : '20' + y;
-              isDateString = true;
-            } else if (ymdMatch) {
-              y = ymdMatch[1];
-              m = ymdMatch[2].padStart(2, '0');
-              d = ymdMatch[3].padStart(2, '0');
-              isDateString = true;
-            }
-            
-            if (isDateString) {
-              const checkDay = parseInt(d);
-              const checkMonth = parseInt(m);
-              if (checkDay >= 1 && checkDay <= 31 && checkMonth >= 1 && checkMonth <= 12) {
-                if (dateFormat === 'DD.MM.YYYY') val = `${d}.${m}.${y}`;
-                else if (dateFormat === 'DD-MM-YYYY') val = `${d}-${m}-${y}`;
-                else if (dateFormat === 'DD/MM/YYYY') val = `${d}/${m}/${y}`;
-                else if (dateFormat === 'YYYY.MM.DD') val = `${y}.${m}.${d}`;
-                else if (dateFormat === 'YYYY-MM-DD') val = `${y}-${m}-${d}`;
-                else if (dateFormat === 'YYYY/MM/DD') val = `${y}/${m}/${d}`;
-                else if (dateFormat === 'MM.DD.YYYY') val = `${m}.${d}.${y}`;
-                else if (dateFormat === 'MM-DD-YYYY') val = `${m}-${d}-${y}`;
-                else if (dateFormat === 'MM/DD/YYYY') val = `${m}/${d}/${y}`;
+        data.forEach(row => {
+          const lineValues = colsToExport.map(col => {
+            let rawVal = row[col];
+            let val = "";
+
+            if (rawVal instanceof Date) {
+              const day = String(rawVal.getUTCDate()).padStart(2, '0');
+              const month = String(rawVal.getUTCMonth() + 1).padStart(2, '0');
+              const year = rawVal.getUTCFullYear();
+              
+              if (dateFormat === 'original' || dateFormat === 'DD.MM.YYYY') val = `${day}.${month}.${year}`;
+              else if (dateFormat === 'DD-MM-YYYY') val = `${day}-${month}-${year}`;
+              else if (dateFormat === 'DD/MM/YYYY') val = `${day}/${month}/${year}`;
+              else if (dateFormat === 'YYYY.MM.DD') val = `${year}.${month}.${day}`;
+              else if (dateFormat === 'YYYY-MM-DD') val = `${year}-${month}-${day}`;
+              else if (dateFormat === 'YYYY/MM/DD') val = `${year}/${month}/${day}`;
+              else if (dateFormat === 'MM.DD.YYYY') val = `${month}.${day}.${year}`;
+              else if (dateFormat === 'MM-DD-YYYY') val = `${month}-${day}-${year}`;
+              else if (dateFormat === 'MM/DD/YYYY') val = `${month}/${day}/${year}`;
+            } 
+            else {
+              val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
+              if (dateFormat !== 'original' && val) {
+                const dmyMatch = val.match(/^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2,4})$/);
+                const ymdMatch = val.match(/^(\d{4})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})$/);
+                
+                let d, m, y, isDateString = false;
+                
+                if (dmyMatch) {
+                  d = dmyMatch[1].padStart(2, '0');
+                  m = dmyMatch[2].padStart(2, '0');
+                  y = dmyMatch[3];
+                  if (y.length === 2) y = parseInt(y) > 50 ? '19' + y : '20' + y;
+                  isDateString = true;
+                } else if (ymdMatch) {
+                  y = ymdMatch[1];
+                  m = ymdMatch[2].padStart(2, '0');
+                  d = ymdMatch[3].padStart(2, '0');
+                  isDateString = true;
+                }
+                
+                if (isDateString) {
+                  const checkDay = parseInt(d);
+                  const checkMonth = parseInt(m);
+                  if (checkDay >= 1 && checkDay <= 31 && checkMonth >= 1 && checkMonth <= 12) {
+                    if (dateFormat === 'DD.MM.YYYY') val = `${d}.${m}.${y}`;
+                    else if (dateFormat === 'DD-MM-YYYY') val = `${d}-${m}-${y}`;
+                    else if (dateFormat === 'DD/MM/YYYY') val = `${d}/${m}/${y}`;
+                    else if (dateFormat === 'YYYY.MM.DD') val = `${y}.${m}.${d}`;
+                    else if (dateFormat === 'YYYY-MM-DD') val = `${y}-${m}-${d}`;
+                    else if (dateFormat === 'YYYY/MM/DD') val = `${y}/${m}/${d}`;
+                    else if (dateFormat === 'MM.DD.YYYY') val = `${m}.${d}.${y}`;
+                    else if (dateFormat === 'MM-DD-YYYY') val = `${m}-${d}-${y}`;
+                    else if (dateFormat === 'MM/DD/YYYY') val = `${m}/${d}/${y}`;
+                  }
+                }
               }
             }
-          }
-        }
-        return val.replace(/\r?\n|\r/g, '').trim(); 
-      });
-      csvRows.push(lineValues.join(csvSeparator));
-    });
+            return val.replace(/\r?\n|\r/g, '').trim(); 
+          });
+          csvRows.push(lineValues.join(csvSeparator));
+        });
 
-    const csvString = '\uFEFF' + csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'processed_data.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+        const csvString = '\uFEFF' + csvRows.join('\n');
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'processed_data.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        alert("Произошла ошибка при экспорте. Файл слишком велик.");
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 100);
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
+      {isLoading && <FullScreenLoader message="Обработка файла. Пожалуйста, подождите..." />}
+      
       <div className="p-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <input 
           type="file" 
@@ -277,35 +317,42 @@ function ExcelToCsv() {
 function CsvToExcel() {
   const [csvFile, setCsvFile] = useState(null);
   const [delimiter, setDelimiter] = useState(';');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) setCsvFile(file);
   };
 
-  const handleExport = async () => {
+  const handleExport = () => {
     if (!csvFile) return;
 
-    // Читаем текст из CSV файла
-    const text = await csvFile.text();
-    
-    // Разбиваем на строки, очищаем пустые (если есть лишние переносы в конце)
-    const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
-    
-    // Разбиваем строки на ячейки по выбранному разделителю
-    const aoa = rows.map(row => row.split(delimiter));
+    setIsLoading(true);
 
-    // Создаем лист и книгу Excel
-    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-    
-    // Скачиваем готовый файл
-    XLSX.writeFile(workbook, "converted_from_csv.xlsx");
+    setTimeout(async () => {
+      try {
+        const text = await csvFile.text();
+        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+        const aoa = rows.map(row => row.split(delimiter));
+
+        const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+        
+        XLSX.writeFile(workbook, "converted_from_csv.xlsx");
+      } catch (error) {
+        alert("Ошибка при конвертации. Возможно, файл поврежден или слишком велик.");
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 100);
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
+      {isLoading && <FullScreenLoader message="Генерация Excel файла..." />}
+
       <div className="p-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <input 
           type="file" 
@@ -352,7 +399,6 @@ export default function App() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 space-y-4 sm:space-y-0">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Конвертер данных</h1>
         
-        {/* Переключатель вкладок */}
         <div className="flex space-x-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
           <button 
             onClick={() => setActiveTab('excel-to-csv')}
@@ -377,7 +423,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Отрисовка активного режима */}
       {activeTab === 'excel-to-csv' ? <ExcelToCsv /> : <CsvToExcel />}
     </div>
   );
