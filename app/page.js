@@ -3,9 +3,11 @@
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 
-export default function ExcelConverter() {
+// ==========================================
+// КОМПОНЕНТ 1: Excel -> CSV
+// ==========================================
+function ExcelToCsv() {
   const [data, setData] = useState([]);
-  
   const [orderedCols, setOrderedCols] = useState([]);
   const [keepCols, setKeepCols] = useState([]);
   const [renameMap, setRenameMap] = useState({});
@@ -31,7 +33,6 @@ export default function ExcelConverter() {
     if (jsonData.length > 0) {
       setData(jsonData);
       const cols = Object.keys(jsonData[0]);
-      
       setOrderedCols(cols);
       setKeepCols(cols);
       
@@ -39,7 +40,6 @@ export default function ExcelConverter() {
       cols.forEach(col => initialRenameMap[col] = col);
       setRenameMap(initialRenameMap);
     }
-
     e.target.value = null;
   };
 
@@ -55,11 +55,9 @@ export default function ExcelConverter() {
 
   const handleSort = () => {
     if (dragItem.current === null || dragOverItem.current === null) return;
-    
     let _orderedCols = [...orderedCols];
     const draggedItemContent = _orderedCols.splice(dragItem.current, 1)[0];
     _orderedCols.splice(dragOverItem.current, 0, draggedItemContent);
-    
     dragItem.current = null;
     dragOverItem.current = null;
     setOrderedCols(_orderedCols);
@@ -98,13 +96,11 @@ export default function ExcelConverter() {
         } 
         else {
           val = (rawVal !== undefined && rawVal !== null) ? rawVal.toString() : "";
-          
           if (dateFormat !== 'original' && val) {
             const dmyMatch = val.match(/^(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{2,4})$/);
             const ymdMatch = val.match(/^(\d{4})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})$/);
             
-            let d, m, y;
-            let isDateString = false;
+            let d, m, y, isDateString = false;
             
             if (dmyMatch) {
               d = dmyMatch[1].padStart(2, '0');
@@ -136,14 +132,12 @@ export default function ExcelConverter() {
             }
           }
         }
-
         return val.replace(/\r?\n|\r/g, '').trim(); 
       });
       csvRows.push(lineValues.join(csvSeparator));
     });
 
     const csvString = '\uFEFF' + csvRows.join('\n');
-    
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -156,10 +150,7 @@ export default function ExcelConverter() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-8 font-sans text-gray-900 dark:text-gray-100">
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Конвертер Excel ➡️ CSV</h1>
-
-      {/* Зона загрузки файлов с поддержкой темной темы */}
+    <div className="space-y-8">
       <div className="p-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <input 
           type="file" 
@@ -201,7 +192,6 @@ export default function ExcelConverter() {
                           : 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 opacity-55'
                       }`}
                     >
-                      {/* Иконка перетаскивания */}
                       <div className="text-gray-400 dark:text-gray-500 select-none" title="Потяните для сортировки">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8h16M4 16h16"></path>
@@ -235,9 +225,7 @@ export default function ExcelConverter() {
             </div>
           </div>
 
-          {/* Панель управления внизу страницы */}
           <div className="pt-4 border-t border-gray-200 dark:border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
             <div className="flex items-center space-x-3">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">Разделитель CSV:</label>
               <select 
@@ -257,7 +245,7 @@ export default function ExcelConverter() {
                 onChange={(e) => setDateFormat(e.target.value)}
                 className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
               >
-                <option value="original">Как в исходном файле (без изменений)</option>
+                <option value="original">Без изменений</option>
                 <option value="DD.MM.YYYY">ДД.ММ.ГГГГ (15.06.2026)</option>
                 <option value="DD-MM-YYYY">ДД-ММ-ГГГГ (15-06-2026)</option>
                 <option value="DD/MM/YYYY">ДД/ММ/ГГГГ (15/06/2026)</option>
@@ -279,6 +267,118 @@ export default function ExcelConverter() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ==========================================
+// КОМПОНЕНТ 2: CSV -> Excel
+// ==========================================
+function CsvToExcel() {
+  const [csvFile, setCsvFile] = useState(null);
+  const [delimiter, setDelimiter] = useState(';');
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) setCsvFile(file);
+  };
+
+  const handleExport = async () => {
+    if (!csvFile) return;
+
+    // Читаем текст из CSV файла
+    const text = await csvFile.text();
+    
+    // Разбиваем на строки, очищаем пустые (если есть лишние переносы в конце)
+    const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+    
+    // Разбиваем строки на ячейки по выбранному разделителю
+    const aoa = rows.map(row => row.split(delimiter));
+
+    // Создаем лист и книгу Excel
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    
+    // Скачиваем готовый файл
+    XLSX.writeFile(workbook, "converted_from_csv.xlsx");
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="p-4 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <input 
+          type="file" 
+          accept=".csv" 
+          onChange={handleFileUpload} 
+          className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-green-50 dark:file:bg-green-950/40 file:text-green-700 dark:file:text-green-400 hover:file:bg-green-100 dark:hover:file:bg-green-900/40 cursor-pointer"
+        />
+      </div>
+
+      {csvFile && (
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex items-center space-x-3">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">Укажите разделитель CSV:</label>
+            <select 
+              value={delimiter} 
+              onChange={(e) => setDelimiter(e.target.value)}
+              className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none cursor-pointer"
+            >
+              <option value=";">Точка с запятой (;)</option>
+              <option value=",">Запятая (,)</option>
+            </select>
+          </div>
+
+          <button 
+            onClick={handleExport}
+            className="sm:col-span-2 w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-green-700 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 cursor-pointer mt-2"
+          >
+            Сконвертировать в Excel (.xlsx)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// ОСНОВНОЙ КОМПОНЕНТ ПРИЛОЖЕНИЯ (С ТАБАМИ)
+// ==========================================
+export default function App() {
+  const [activeTab, setActiveTab] = useState('excel-to-csv');
+
+  return (
+    <div className="max-w-3xl mx-auto p-6 font-sans text-gray-900 dark:text-gray-100 min-h-screen">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 space-y-4 sm:space-y-0">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Конвертер данных</h1>
+        
+        {/* Переключатель вкладок */}
+        <div className="flex space-x-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+          <button 
+            onClick={() => setActiveTab('excel-to-csv')}
+            className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+              activeTab === 'excel-to-csv' 
+                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700/50'
+            }`}
+          >
+            Excel ➡️ CSV
+          </button>
+          <button 
+            onClick={() => setActiveTab('csv-to-excel')}
+            className={`px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+              activeTab === 'csv-to-excel' 
+                ? 'bg-white dark:bg-gray-700 text-green-600 dark:text-green-400 shadow-sm' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700/50'
+            }`}
+          >
+            CSV ➡️ Excel
+          </button>
+        </div>
+      </div>
+
+      {/* Отрисовка активного режима */}
+      {activeTab === 'excel-to-csv' ? <ExcelToCsv /> : <CsvToExcel />}
     </div>
   );
 }
